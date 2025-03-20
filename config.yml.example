@@ -1,0 +1,34 @@
+database:
+  host: localhost
+  port: 3306
+  user: newroot
+  password: password
+  name: fundkite
+
+production:
+  host: localhost
+  port: 3306
+  user: newroot
+  password: password
+  name: fundkite
+
+smtp:
+  server: smtp.migadu.com
+  port: 465
+  username: user@example.com
+  password: smtp_password
+  from: noreply@example.com
+  to: admin@example.com
+
+paths:
+  input: /data/Vordoom/fundkite-12-08-19/archive
+  done: ./sql/done
+  failed: ./sql/failed
+
+archive:
+  check_interval: 60
+  source_status: "To Archive"
+  archiving_status: "Archiving"
+  archived_status: "Archived"
+  error_status: "Error"
+  archive_url: "https://dev.fundkite.com/vd_deals_archive.php"

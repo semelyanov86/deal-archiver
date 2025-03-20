@@ -1,0 +1,25 @@
+version: '3'
+
+tasks:
+  build:
+    desc: "Build application"
+    cmds:
+      - go build -ldflags=${linker_flags} -o=./bin/app .
+      - GOOS=linux GOARCH=amd64 go build -ldflags=${linker_flags} -o=./bin/linux_amd64/app .
+
+  vendor:
+    desc: "Install dependencies"
+    cmds:
+      - go mod tidy
+      - go mod verify
+      - go mod vendor
+
+  audit:
+    desc: "tidy and vendor dependencies and format, vet and test all code"
+    cmds:
+      - go fmt .
+      - go vet .
+
+  run:
+    desc: "Run compiled application"
+    cmd: ./bin/app
