@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -174,43 +175,64 @@ func updateDealStatus(dealID, status string) error {
 }
 
 func sendEmail(subject, body string) {
-	tlsConfig := &tls.Config{
-		ServerName:         config.SMTP.Server,
-		InsecureSkipVerify: false,
-	}
-
-	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", config.SMTP.Server, config.SMTP.Port), tlsConfig)
+	// 1. Устанавливаем TCP-соединение
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", config.SMTP.Server, config.SMTP.Port))
 	if err != nil {
-		log.Printf("Error creating TLS connection: %v", err)
+		log.Printf("SMTP Connection Error: %v", err)
 		return
 	}
 	defer conn.Close()
 
+	// 2. Создаем SMTP-клиент
 	client, err := smtp.NewClient(conn, config.SMTP.Server)
 	if err != nil {
-		log.Printf("Error creating SMTP client: %v", err)
+		log.Printf("Error creating client: %v", err)
 		return
 	}
 	defer client.Close()
 
-	auth := smtp.PlainAuth("", config.SMTP.Username, config.SMTP.Password, config.SMTP.Server)
-	if err := client.Auth(auth); err != nil {
-		log.Printf("SMTP auth error: %v", err)
+	// 3. Обязательный EHLO перед STARTTLS
+	if err := client.Hello("localhost"); err != nil {
+		log.Printf("Error EHLO: %v", err)
 		return
 	}
 
+	// 4. Активируем STARTTLS
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		tlsConfig := &tls.Config{
+			ServerName:         config.SMTP.Server,
+			InsecureSkipVerify: false,
+		}
+		if err := client.StartTLS(tlsConfig); err != nil {
+			log.Printf("Error STARTTLS: %v", err)
+			return
+		}
+	}
+
+	// 5. Реализация AUTH LOGIN вместо PLAIN
+	auth := &loginAuth{
+		username: config.SMTP.Username,
+		password: config.SMTP.Password,
+	}
+
+	if err := client.Auth(auth); err != nil {
+		log.Printf("Auth Error: %v", err)
+		return
+	}
+
+	// 6. Отправка письма
 	if err := client.Mail(config.SMTP.From); err != nil {
-		log.Printf("Mail command error: %v", err)
+		log.Printf("Error MAIL: %v", err)
 		return
 	}
 	if err := client.Rcpt(config.SMTP.To); err != nil {
-		log.Printf("Rcpt command error: %v", err)
+		log.Printf("Error RCPT: %v", err)
 		return
 	}
 
 	wc, err := client.Data()
 	if err != nil {
-		log.Printf("Data command error: %v", err)
+		log.Printf("Error DATA: %v", err)
 		return
 	}
 	defer wc.Close()
@@ -222,8 +244,30 @@ func sendEmail(subject, body string) {
 		body,
 	)
 
-	if _, err = fmt.Fprint(wc, msg); err != nil {
-		log.Printf("Error writing message: %v", err)
+	if _, err = wc.Write([]byte(msg)); err != nil {
+		log.Printf("Write Error: %v", err)
 		return
 	}
+
+	log.Println("Email successfully sent")
+}
+
+type loginAuth struct {
+	username, password string
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", []byte{}, nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		switch string(fromServer) {
+		case "Username:":
+			return []byte(a.username), nil
+		case "Password:":
+			return []byte(a.password), nil
+		}
+	}
+	return nil, nil
 }
